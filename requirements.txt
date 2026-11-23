@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+redis>=5.0
+pydantic-settings
+sqlalchemy>=2.0
+aiosqlite
