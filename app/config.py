@@ -6,4 +6,9 @@ class Settings(BaseSettings):
     redis_connect_timeout: float = 0.5
     redis_connection_pool_size: int = 20
 
+    cach_prefix:str ='myapp'
+    cach_version:str ='v1'
+    ttl_product:int =60
+    ttl_product_list:int = 30
+
 settings = Settings()
