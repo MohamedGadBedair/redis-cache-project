@@ -19,7 +19,7 @@ router = routing.APIRouter()
 product_ttl = 60  # Cache time-to-live in seconds
 
 # endpoint to get product by id
-@router.get('/products/{product_id}')
+@router.get('/{product_id}')
 async def get_product(product_id:int, db:Annotated[AsyncSession, Depends(get_db)]):
    async def load():
       await asyncio.sleep(1)  # Simulate a delay for demonstration purposes
@@ -32,7 +32,7 @@ async def get_product(product_id:int, db:Annotated[AsyncSession, Depends(get_db)
    return {"data": data, "source": souce}
 
 
-@router.get('/products')
+@router.get('/')
 async def list_products(
    db:Annotated[AsyncSession, Depends(get_db)],
    page:int=Query(1, ge=1),
@@ -48,7 +48,7 @@ async def list_products(
    data,source = await get_or_set(product_list_key(page,limit),settings.ttl_product,load)
    return {"data": data, "source": source}
 
-@router.post('/products',status_code=status.HTTP_201_CREATED)
+@router.post('/',status_code=status.HTTP_201_CREATED)
 async def create_product(
    body:ProductCreate,
    db:Annotated[AsyncSession, Depends(get_db)]
@@ -59,7 +59,7 @@ async def create_product(
    await db.refresh(product)
    await invalidate_product(product.id)
 
-@router.put('/products/{product_id}')
+@router.put('/{product_id}')
 async def update_product(
     product_id:int,
     body:ProductUpdate,
@@ -77,7 +77,7 @@ async def update_product(
    await invalidate_product(product.id)
    return ProductOut.model_validate(product).model_dump()
 
-@router.delete('/products/{product_id}',status_code=status.HTTP_204_NO_CONTENT)
+@router.delete('/{product_id}',status_code=status.HTTP_204_NO_CONTENT)
 async def delete_product(
     product_id:int,
     db:Annotated[AsyncSession, Depends(get_db)],
