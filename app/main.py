@@ -35,7 +35,7 @@ async def lifespan(app:FastAPI):
         print('Redis is not connected')
         print(e)
     yield 
-    await redis_client.close()
+    await redis_client.aclose()
 
 # create the FastAPI app with the lifespan event
 app = FastAPI(lifespan=lifespan)    

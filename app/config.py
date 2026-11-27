@@ -1,6 +1,8 @@
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
+    database_url: str = "sqlite+aiosqlite:///./app.db"
+
     redis_url: str = "redis://127.0.0.1:6379/0"
     redis_socket_timeout: float = 0.5
     redis_connect_timeout: float = 0.5

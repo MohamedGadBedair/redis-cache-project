@@ -13,7 +13,6 @@ from app.config import settings
 from app.models import Product
 from app.schemas import ProductOut, ProductCreate, ProductUpdate
 from app.database import get_db
-from app.circuit_breaker import breaker
 # =====================================================================
 router = routing.APIRouter()
 # ====================================================================
@@ -23,7 +22,7 @@ product_ttl = 60  # Cache time-to-live in seconds
 @router.get('/{product_id}')
 async def get_product(product_id:int, db:Annotated[AsyncSession, Depends(get_db)]):
    async def load():
-      await asyncio.sleep(1)  # Simulate a delay for demonstration purposes
+      # await asyncio.sleep(1)  # Simulate a delay for demonstration purposes
       product = await db.get(Product, product_id)
       return ProductOut.model_validate(product).model_dump() if product else None
    
@@ -33,7 +32,7 @@ async def get_product(product_id:int, db:Annotated[AsyncSession, Depends(get_db)
    return {"data": data, "source": souce}
 
 
-@router.get('/')
+@router.get('')
 async def list_products(
    db:Annotated[AsyncSession, Depends(get_db)],
    page:int=Query(1, ge=1),
@@ -49,7 +48,7 @@ async def list_products(
    data,source = await get_or_set(product_list_key(page,limit),settings.ttl_product,load)
    return {"data": data, "source": source}
 
-@router.post('/',status_code=status.HTTP_201_CREATED)
+@router.post('',status_code=status.HTTP_201_CREATED)
 async def create_product(
    body:ProductCreate,
    db:Annotated[AsyncSession, Depends(get_db)]
@@ -59,6 +58,7 @@ async def create_product(
    await db.commit()
    await db.refresh(product)
    await invalidate_product(product.id)
+   return ProductOut.model_validate(product).model_dump()   # ده اللي ناقص
 
 @router.put('/{product_id}')
 async def update_product(
