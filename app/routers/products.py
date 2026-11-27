@@ -8,11 +8,12 @@ from sqlalchemy import select
 from fastapi import routing, Depends, HTTPException,status,Query
 # app imports
 from app.cache import get_or_set, invalidate_product
-from app.cach_keys import product_key, product_list_key
+from app.cache_keys import product_key, product_list_key
 from app.config import settings
 from app.models import Product
 from app.schemas import ProductOut, ProductCreate, ProductUpdate
 from app.database import get_db
+from app.circuit_breaker import breaker
 # =====================================================================
 router = routing.APIRouter()
 # ====================================================================
@@ -39,7 +40,7 @@ async def list_products(
    limit:int=Query(5,ge=1,le=50),
 ):
    async def load():
-      await asyncio.sleep(1)
+      # await asyncio.sleep(1)
       rows = await db.scalars(
          select(Product).offset((page-1)*limit).limit(limit)
          )

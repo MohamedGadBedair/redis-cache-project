@@ -1,9 +1,10 @@
 import redis.asyncio as redis
 from app.config import settings
 
-pool = redis.ConnectionPool.from_url(
+pool = redis.BlockingConnectionPool.from_url(
     settings.redis_url,
     max_connections=settings.redis_connection_pool_size,
+    timeout=settings.redis_pool_wait_timeout,
     socket_timeout=settings.redis_socket_timeout,
     socket_connect_timeout=settings.redis_connect_timeout,
     decode_responses=True,

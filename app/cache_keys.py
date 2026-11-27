@@ -1,7 +1,7 @@
 from app.config import settings
 
 def _key(*parts:object)->str:
-    return ':'.join([settings.cach_prefix,settings.cach_version,*map(str,parts)])
+    return ':'.join([settings.cache_prefix,settings.cache_version,*map(str,parts)])
 
 def product_key(product_id:int)->str:
     return _key('product',product_id)

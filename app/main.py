@@ -1,12 +1,14 @@
 # async context manager imports
 from contextlib import asynccontextmanager
+import asyncio
 # fastapi imports
 from fastapi import FastAPI
 # sqlalchemy imports
 from sqlalchemy import select, func
 # app imports
 from app.database import Base, SessionLocal, engine
-from app.redis_clinent import redis_client
+from app.redis_client import redis_client
+from app.circuit_breaker import breaker
 # routers imports
 from app.routers import products
 
@@ -45,8 +47,9 @@ app.include_router(products.router, prefix="/products", tags=["products"])
 @app.get("/health")
 async def health():
     try:
-        await redis_client.ping()
-        return {"status": "ok"}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
+        await asyncio.wait_for(redis_client.ping(), timeout=1)
+        redis_status='ok'
+    except Exception:
+        redis_status = 'down'
+    return {"app":'ok',"redis":redis_status ,"circuit":breaker.state.value}
     
