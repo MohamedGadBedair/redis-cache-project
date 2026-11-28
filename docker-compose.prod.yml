@@ -1,0 +1,25 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+      --appendonly no
+      --tcp-keepalive 60
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep PONG",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 5

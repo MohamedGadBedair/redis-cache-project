@@ -10,7 +10,7 @@ class Settings(BaseSettings):
 
     cache_prefix:str ='myapp'
     cache_version:str ='v1'
-    ttl_product:int =60
+    ttl_product: int = 300
     ttl_product_list:int = 30
 
     ttl_not_found:int = 10

@@ -45,3 +45,14 @@ async def test_unknown_product_404_and_negative_cached(client):
     assert (await client.get("/products/987654")).status_code == 404
     assert (await client.get("/products/987654")).status_code == 404
     assert "__null__" in await redis_client.get(product_key(987654))
+
+async def test_metrics_endpoint(client):
+    pid = await create(client)
+    await client.get(f"/products/{pid}")
+    await client.get(f"/products/{pid}")
+    body = (await client.get("/metrics")).json()
+    assert body["counters"]["cache_miss"] == 1
+    assert body["counters"]["cache_hit"] == 1
+    assert body["hit_ratio"] == 0.5
+    assert body["circuit"] == "closed"
+    assert "used_memory_human" in body["redis"]

@@ -6,6 +6,11 @@ from app.cache import cache_get, get_or_set, invalidate_product
 from app.cache_keys import product_key
 from app.circuit_breaker import breaker
 from app.redis_client import redis_client
+from app import metrics
+
+import fnmatch
+
+from app.cache_keys import product_list_key, product_list_pattern
 
 
 def counting_loader(value, delay=0.0):
@@ -123,3 +128,55 @@ async def test_missed_invalidation_purges_stale_cache(monkeypatch):
 
     assert await cache_get(product_key(1)) is None   # اتمسح قبل القراءة
     assert cache_module._dirty is False
+
+async def test_outage_single_flight(monkeypatch):
+    monkeypatch.setattr(cache_module, "redis_client", DeadRedis())
+    loader, calls = counting_loader({"v": 1}, delay=0.2)
+    results = await asyncio.gather(*[get_or_set("t:out", 60, loader) for _ in range(50)])
+    assert calls["n"] == 1
+    assert all(d == {"v": 1} for d, _ in results)
+
+
+async def test_bypass_is_separated_from_miss(monkeypatch):
+    monkeypatch.setattr(cache_module, "redis_client", DeadRedis())
+    loader, _ = counting_loader({"v": 1})
+    for _ in range(5):
+        await get_or_set("t:b", 60, loader)
+    s = metrics.snapshot()
+    print(s["counters"])
+    assert s["counters"]["cache_bypass"] == 5
+    assert s["hit_ratio_when_redis_up"] is None
+
+def test_list_key_matches_invalidation_pattern():
+    assert fnmatch.fnmatchcase(product_list_key(1, 5), product_list_pattern())
+    assert fnmatch.fnmatchcase(product_list_key(3, 50), product_list_pattern())
+
+
+async def test_hit_ratio_is_counted():
+    loader, _ = counting_loader({"v": 1})
+    for _ in range(3):
+        await get_or_set("m:1", 60, loader)
+    s = metrics.snapshot()
+    assert s["counters"]["cache_miss"] == 1
+    assert s["counters"]["cache_hit"] == 2
+    assert s["hit_ratio"] == 0.6667
+
+
+async def test_stampede_metrics():
+    loader, _ = counting_loader({"v": 1}, delay=0.2)
+    await asyncio.gather(*[get_or_set("m:hot", 60, loader) for _ in range(50)])
+    c = metrics.snapshot()["counters"]
+    assert c["db_load"] == 1
+    assert c["lock_acquired"] == 1
+    assert c.get("coalesced", 0) + c.get("cache_hit", 0) == 49
+
+
+async def test_redis_down_metrics(monkeypatch):
+    monkeypatch.setattr(cache_module, "redis_client", DeadRedis())
+    loader, _ = counting_loader({"v": 1})
+    for _ in range(5):
+        await get_or_set("m:d", 60, loader)
+    c = metrics.snapshot()["counters"]
+    assert c["redis_error"] >= 3
+    assert c["breaker_opened"] == 1
+    assert c.get("circuit_rejected", 0) >= 1

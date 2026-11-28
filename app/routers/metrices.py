@@ -20,4 +20,4 @@ async def metrics_endpoint():
         }
     except Exception:
         redis_info={'error':'unavailable'}
-    return{**metrics.snapshot(),'circuit':breaker.state.value, "reddis":redis_info}
+    return{**metrics.snapshot(),'circuit':breaker.state.value, "redis":redis_info}

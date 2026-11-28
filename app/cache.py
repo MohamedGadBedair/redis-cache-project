@@ -206,11 +206,11 @@ async def get_or_set(
 
     cached = await cache_get(key)
     if cached is not None:
-        metrics.incr("cahce_hit")
+        metrics.incr("cache_hit")
         if _is_null(cached):
             metrics.incr("negative_hit")
         return (None if _is_null(cached) else cached), "cache"
-    metrics.incr("cahce_miss")
+    metrics.incr("cache_miss")
 
 
     lock_key = _lock_key(key)
@@ -222,15 +222,16 @@ async def get_or_set(
         )
     except CacheUnavailable as e:
         _log_failure("lock", key, e)
-        return await _load_and_store(key, ttl, loader, null_ttl), "db"
-
+        metrics.incr("cache_bypass")
+        return await _load_single_flight(key, ttl, loader, null_ttl), "db"
+    
     if got_lock:
         metrics.incr("lock_acquired")
         try:
             cached = await cache_get(key)  # double-check
             if cached is not None:
                 return (None if _is_null(cached) else cached), "cache"
-            return await _load_and_store(key, ttl, loader, null_ttl), "db"
+            return await _load_single_flight(key, ttl, loader, null_ttl), "db"
         finally:
             await _release_lock(lock_key, token)
     
@@ -247,4 +248,38 @@ async def get_or_set(
             return (None if _is_null(cached) else cached), "cache"
     
     metrics.incr("lock_wait_timeout")
-    return await _load_and_store(key, ttl, loader, null_ttl), "db"
+    return await _load_single_flight(key, ttl, loader, null_ttl), "db"
+# =================================================================================
+_inflight: dict[str, asyncio.Future] = {}
+
+
+async def _load_single_flight(key: str, ttl: int, loader, null_ttl: int):
+    """نفس المفتاح في نفس الـ process: واحد يحمّل والباقي يستنى نتيجته."""
+    while True:
+        existing = _inflight.get(key)
+        if existing is None:
+            break
+        metrics.incr("local_coalesced")
+        try:
+            return await asyncio.shield(existing)
+        except asyncio.CancelledError:
+            if not existing.cancelled():
+                raise          # احنا اللي اتلغينا
+            # القائد اتلغى (العميل قفل): نحاول بنفسنا
+
+    fut = asyncio.get_running_loop().create_future()
+    _inflight[key] = fut
+    try:
+        data = await _load_and_store(key, ttl, loader, null_ttl)
+    except asyncio.CancelledError:
+        fut.cancel()
+        raise
+    except BaseException as e:
+        fut.set_exception(e)
+        fut.exception()        # علّمها مقروءة عشان مايظهرش warning لو مفيش منتظرين
+        raise
+    else:
+        fut.set_result(data)
+        return data
+    finally:
+        _inflight.pop(key, None)
