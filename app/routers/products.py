@@ -1,6 +1,5 @@
 # python imports
 from typing import Annotated
-import asyncio
 # sqlalchemy imports
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select

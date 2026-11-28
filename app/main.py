@@ -10,7 +10,8 @@ from app.database import Base, SessionLocal, engine
 from app.redis_client import redis_client
 from app.circuit_breaker import breaker
 # routers imports
-from app.routers import products
+from app.routers import products,metrices
+import logging
 
 # ====================================================================
 # app lifespan event to check redis connection and close it on shutdown
@@ -39,9 +40,12 @@ async def lifespan(app:FastAPI):
 
 # create the FastAPI app with the lifespan event
 app = FastAPI(lifespan=lifespan)    
+
+logging.basicConfig(level=logging.INFO)
 # ====================================================================
 # include the routers
 app.include_router(products.router, prefix="/products", tags=["products"])
+app.include_router(metrices.router, prefix="/metrics", tags=["metrices"])
 # ================================================================
 # health check endpoint
 @app.get("/health")

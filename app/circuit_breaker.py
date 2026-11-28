@@ -1,6 +1,7 @@
 import logging
 import time
 from enum import Enum
+from app import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ class CircuitBreaker:
         self._probe_started_at = None
         if self._failures >= self.failure_threshold:
             if self._opened_at is None:
+                metrics.incr("breaker_opened")
                 logger.error("Redis circuit OPEN after %d failures", self._failures)
             self._opened_at = time.monotonic()
 

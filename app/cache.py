@@ -13,6 +13,7 @@ from app.cache_keys import product_key, product_list_pattern
 from app.circuit_breaker import breaker
 from app.config import settings
 from app.redis_client import redis_client
+from app import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -48,14 +49,17 @@ class CircuitOpen(CacheUnavailable):
 async def _run(fn, *args, **kwargs):
     """كل أوامر Redis لازم تعدّي من هنا."""
     if not breaker.allow():
+        metrics.incr('circuit_rejected')
         raise CircuitOpen("circuit open")
     try:
         result = await fn(*args, **kwargs)
     except CONNECTION_ERRORS as e:
+        metrics.incr('redis_error')
         breaker.record_failure()
         raise CacheUnavailable(str(e)) from e
     except redis_exc.RedisError as e:
         # Redis رد بخطأ منطقي: السيرفر شغال، مانفتحش الدايرة
+        metrics.incr('redis_error')
         breaker.record_success()
         raise CacheUnavailable(str(e)) from e
     breaker.record_success()
@@ -109,6 +113,7 @@ async def _ensure_clean() -> bool:
         except CacheUnavailable:
             return False
         _dirty = False
+        metrics.incr('dirty_purge')
         logger.warning("cache purged after missed invalidation")
         return True
 
@@ -156,9 +161,11 @@ async def invalidate_product(product_id: int | None = None) -> None:
         if product_id is not None:
             await _delete(product_key(product_id))
         await _scan_delete(product_list_pattern())
+        metrics.incr('invalidation_ok')
     except CacheUnavailable as e:
         _dirty = True
-        logger.error("invalidate failed, cache marked dirty: %s", e)
+        metrics.incr("invalidation_failed")
+        logger.error(f"invalidate failed, cache marked dirty:{e}")
 
 
 # ---------- Cache-Aside with protection ----------
@@ -179,6 +186,7 @@ async def _release_lock(lock_key: str, token: str) -> None:
 
 
 async def _load_and_store(key: str, ttl: int, loader, null_ttl: int):
+    metrics.incr("db_load")
     data = await loader()
     if data is None:
         await cache_set(key, NULL_MARKER, null_ttl, jitter=0)
@@ -198,7 +206,12 @@ async def get_or_set(
 
     cached = await cache_get(key)
     if cached is not None:
+        metrics.incr("cahce_hit")
+        if _is_null(cached):
+            metrics.incr("negative_hit")
         return (None if _is_null(cached) else cached), "cache"
+    metrics.incr("cahce_miss")
+
 
     lock_key = _lock_key(key)
     token = uuid.uuid4().hex
@@ -212,6 +225,7 @@ async def get_or_set(
         return await _load_and_store(key, ttl, loader, null_ttl), "db"
 
     if got_lock:
+        metrics.incr("lock_acquired")
         try:
             cached = await cache_get(key)  # double-check
             if cached is not None:
@@ -219,7 +233,9 @@ async def get_or_set(
             return await _load_and_store(key, ttl, loader, null_ttl), "db"
         finally:
             await _release_lock(lock_key, token)
-
+    
+    metrics.incr("lock_waited")
+    
     # مش واخدين الـ lock: نستنى صاحبه، لكن لو Redis وقع نبطّل انتظار
     loop = asyncio.get_running_loop()
     deadline = loop.time() + settings.cache_lock_wait_seconds
@@ -227,6 +243,8 @@ async def get_or_set(
         await asyncio.sleep(settings.cache_lock_poll_seconds)
         cached = await cache_get(key)
         if cached is not None:
+            metrics.incr("coalesced")   # اتخدمنا من تحميل حد تاني
             return (None if _is_null(cached) else cached), "cache"
-
+    
+    metrics.incr("lock_wait_timeout")
     return await _load_and_store(key, ttl, loader, null_ttl), "db"
